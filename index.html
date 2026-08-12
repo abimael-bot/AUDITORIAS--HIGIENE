@@ -364,11 +364,12 @@
     </div>
 
     <div class="datatools">
-      <span class="dt-label">🔄 Compartir datos entre equipos</span>
-      <button class="btn sm" id="exportBtn">⬇ Exportar auditorías</button>
+      <span class="dt-label" id="cloudStatus">☁️ Conectado a la nube · todos ven lo mismo</span>
+      <button class="btn sm" id="syncBtn">🔄 Actualizar</button>
+      <button class="btn sm" id="exportBtn">⬇ Exportar</button>
       <label class="btn sm" for="importFile">⬆ Importar</label>
       <input type="file" accept="application/json,.json" id="importFile" hidden>
-      <span class="dt-hint">Cada auditor exporta su archivo y una persona lo importa aquí para consolidar todo en un solo tablero.</span>
+      <span class="dt-hint">Todo se guarda en la nube y se consolida solo. Exportar/Importar quedan como respaldo.</span>
     </div>
 
     <div class="filterbar">
@@ -599,6 +600,31 @@ let DB; DB=load();
 function load(){try{const r=localStorage.getItem(KEY);if(r)return JSON.parse(r);}catch(e){}const s=seed();save(s);return s;}
 function save(d){DB=d;try{localStorage.setItem(KEY,JSON.stringify(d));}catch(e){toast('⚠ Almacenamiento lleno (fotos)');}}
 
+/* ============ NUBE (Google Sheets) ============ */
+const CLOUD='https://script.google.com/macros/s/AKfycbzP5S6ekMh3NADuxjWoazswvu0FE3vEmtTqyaRZmPSDcmCJcHmCTm6e7qh83UU6z9R9/exec';
+let cloudOK=false;
+function liteAudit(a){
+ const s=score(a.resultados); const res={};
+ for(const id in a.resultados){const r=a.resultados[id];res[id]={estado:r.estado,coment:r.coment||'',estatus:r.estatus||'abierto',fotos:(r.fotos||[]).length};}
+ return {id:a.id,sucursal:a.sucursal,fecha:a.fecha,evaluador:a.evaluador||'',encargado:a.encargado||'',cumplimiento:s.pct,hallazgos:s.findings.length,criticos:s.critOpen,resultados:res};
+}
+function cloudSave(a){try{fetch(CLOUD,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'save',audit:liteAudit(a)})}).catch(()=>{});}catch(e){}}
+function cloudDelete(id){try{fetch(CLOUD,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'delete',id:id})}).catch(()=>{});}catch(e){}}
+function cloudList(){return fetch(CLOUD+'?action=list',{cache:'no-store'}).then(r=>r.json()).then(d=>d&&d.audits?d.audits:null).catch(()=>null);}
+function setCloudStatus(ok){cloudOK=ok;const el=document.getElementById('cloudStatus');if(el)el.textContent=ok?'☁️ Conectado a la nube · todos ven lo mismo':'⚠️ Sin conexión a la nube (usando solo este dispositivo)';}
+function syncCloud(){
+ return cloudList().then(cloud=>{
+   if(!cloud){setCloudStatus(false);return false;}
+   setCloudStatus(true);
+   const localIds=new Set(DB.map(a=>a.id)), cloudIds=new Set(cloud.map(a=>a.id));
+   let changed=false;
+   cloud.forEach(ca=>{if(ca&&ca.id&&ca.resultados&&!localIds.has(ca.id)){DB.push(ca);localIds.add(ca.id);changed=true;}});
+   DB.forEach(a=>{if(!cloudIds.has(a.id))cloudSave(a);});
+   if(changed)save(DB);
+   return true;
+ }).catch(()=>{setCloudStatus(false);return false;});
+}
+
 /* ============ SCORING ============ */
 function score(res){
  let num=0,den=0,byArea={},findings=[],critOpen=0;
@@ -743,7 +769,7 @@ function renderPlan(scored){
      ${items}</details>`;
  }).join('');
  el.querySelectorAll('select.est').forEach(sel=>sel.addEventListener('change',e=>{
-   const {aid,iid}=e.target.dataset; const a=DB.find(x=>x.id===aid); if(a&&a.resultados[iid]){a.resultados[iid].estatus=e.target.value;save(DB);renderDash();toast('Estatus actualizado');}
+   const {aid,iid}=e.target.dataset; const a=DB.find(x=>x.id===aid); if(a&&a.resultados[iid]){a.resultados[iid].estatus=e.target.value;save(DB);cloudSave(a);renderDash();toast('Estatus actualizado');}
  }));
  el.querySelectorAll('[data-report]').forEach(b=>b.addEventListener('click',ev=>{ev.preventDefault();openReportForSuc(b.dataset.report);}));
  el.querySelectorAll('.thumbs img').forEach(img=>img.addEventListener('click',()=>lightbox(img.src)));
@@ -1004,7 +1030,7 @@ document.getElementById('saveBtn').addEventListener('click',()=>{
    if(d.estado!=='cumple')resultados[id]={estado:d.estado,coment:d.coment||'',estatus:d.estatus||'abierto',fotos:d.fotos||[]};
    else if(d.coment)resultados[id]={estado:'cumple',coment:d.coment};}
  const a={id:'a_'+suc.replace(/\s/g,'')+'_'+fecha+'_'+Date.now(),sucursal:suc,fecha,evaluador,encargado,resultados};
- DB.push(a);save(DB);
+ DB.push(a);save(DB);cloudSave(a);
  postSave(a.id,suc);
 });
 function postSave(auditId,suc){
@@ -1040,7 +1066,7 @@ function importData(file){
    if(!incoming){toast('El archivo no tiene auditorías');return;}
    const have=new Set(DB.map(a=>a.id));
    let added=0,dup=0;
-   incoming.forEach(a=>{if(a&&a.id&&a.sucursal&&a.resultados){if(have.has(a.id)){dup++;}else{DB.push(a);have.add(a.id);added++;}}});
+   incoming.forEach(a=>{if(a&&a.id&&a.sucursal&&a.resultados){if(have.has(a.id)){dup++;}else{DB.push(a);have.add(a.id);added++;cloudSave(a);}}});
    save(DB);renderDash();
    toast(`Importadas ${added} auditoría(s) nueva(s)`+(dup?` · ${dup} ya existían`:''));
  };
@@ -1070,9 +1096,11 @@ document.getElementById('fRubSel').addEventListener('change',e=>{fRubro=e.target
 document.getElementById('fClear').addEventListener('click',()=>{fSuc='Todas';fRubro='Todos';renderDash();});
 document.getElementById('exportBtn').addEventListener('click',exportData);
 document.getElementById('importFile').addEventListener('change',e=>{if(e.target.files[0])importData(e.target.files[0]);e.target.value='';});
+document.getElementById('syncBtn').addEventListener('click',()=>{toast('Actualizando…');syncCloud().then(ok=>{renderDash();toast(ok?'Actualizado desde la nube ✓':'Sin conexión a la nube');});});
 let toastT;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2400);}
 document.getElementById('themeBtn').addEventListener('click',()=>{const cur=document.documentElement.getAttribute('data-theme');const isDark=cur?cur==='dark':matchMedia('(prefers-color-scheme:dark)').matches;document.documentElement.setAttribute('data-theme',isDark?'light':'dark');renderDash();if(document.getElementById('view-nueva').classList.contains('active'))recalc();});
 let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(document.getElementById('view-dash').classList.contains('active'))renderDash();},200);});
 
 renderDash();renderMaestro();initNueva();
+syncCloud().then(()=>renderDash());
 </script>
