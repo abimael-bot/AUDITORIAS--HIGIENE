@@ -195,6 +195,7 @@
   .fitem .fmeta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2)}
   .thumbs{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
   .thumbs img{width:44px;height:44px;object-fit:cover;border-radius:7px;border:1px solid var(--line-2);cursor:pointer}
+  .foto-fail{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:7px;border:1px dashed var(--line-2);font-size:16px;cursor:help}
   .foto-link{display:inline-flex;text-decoration:none}
   .thumb-wrap{position:relative;display:inline-flex}
   .thumb-del{position:absolute;top:-6px;right:-6px;width:19px;height:19px;border-radius:50%;border:2px solid var(--surface);background:var(--crit);color:#fff;font-size:12px;font-weight:700;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
@@ -600,6 +601,43 @@ const MASTER=[
 ];
 const ITEM={}; MASTER.forEach(a=>a.items.forEach(it=>{ITEM[it[0]]={id:it[0],texto:it[1],origen:it[2],peso:it[3],rom:a.rom,area:a.area};}));
 const AREA_NAME={}; MASTER.forEach(a=>AREA_NAME[a.rom]=a.area);
+const SUGERIDO={
+ '1':'Programar mantenimiento correctivo de acabados (pintura, impermeabilización) y limpieza profunda; agregar a bitácora de mantenimiento preventivo.',
+ '2':'Reforzar tallado/trapeado diario; evaluar tratamiento especial (sellador o reemplazo) si hay manchas persistentes.',
+ '3':'Instalar/reparar protección física en puertas y ventanas de producción (cortinas de tiras, mallas) contra lluvia y fauna nociva.',
+ '5':'Actualizar el inventario de equipo menor por sucursal; que gerentes de unidad y gerentes distritales validen periódicamente su uso y estado.',
+ '6':'Comprar termómetros digitales para todas las sucursales; capacitar al personal en su lectura correcta y establecer registro diario de temperaturas.',
+ '7':'Dar mantenimiento a la barra de servicio (calibración de temperatura); mientras se corrige, no usarla para conservar producto fuera de rango.',
+ '11':'Colocar/reponer rejillas y limpiar coladeras; revisar trampa de grasa y programar limpieza periódica, incorporando este punto al plan de revisión con el proveedor de fumigación.',
+ '12':'Implementar bitácora de lavado de baños por turno; en Colima, reemplazar de inmediato los botes de basura dañados.',
+ '14':'Revisar/instalar extracción o ventilación adicional para reducir calor, vapor y humo en el área de producción.',
+ '15':'Reponer o proteger focos y lámparas en zonas con producto expuesto; verificar niveles de iluminación.',
+ '16':'Habilitar de inmediato la estación de lavado de manos (agua, jabón, secado, bote con tapa) en el área de elaboración.',
+ '17':'Reabastecer jabón, gel antibacterial y toallas interdobladas; asignar revisión de dispensadores al inicio de turno.',
+ '18':'Reabastecer el kit de lavado con sanitizante y dejarlo limpio y accesible; revisar en cada apertura.',
+ '19':'Designar y delimitar físicamente un área exclusiva para productos químicos y de limpieza, separada de alimentos y equipo de refrigeración — nunca dentro de mesas frías o refrigeradores junto con materia prima.',
+ '23':'Entregar a cada sucursal una ficha técnica de organización de almacén conforme a la norma, con zonas delimitadas y criterios de orden y limpieza.',
+ '24':'Levantar inventario de cambros/contenedores de almacenamiento para identificar los dañados o con residuo de sticker y programar su reemplazo; estandarizar el formato de etiqueta PEPS, ya que el actual deja residuo al despegarse.',
+ '33':'Aclarar con el proveedor Solugreen el envío del producto correcto (Seven, específico para fruta y verdura) — actualmente solo está llegando Seven C, que es aromatizante para trastes y no debe usarse en este proceso — y asignar una esponja de color distinto, exclusiva para el lavado de fruta y verdura.',
+ '34':'Generar ficha técnica de uso del ozonificador para desinfección de vegetales, incluyendo qué sucede en caso de uso incorrecto (sub o sobredosificación).',
+ '35':'Definir si se utilizará Liquid Sanitizer para la solución de utensilios y distribuirlo de inmediato a todas las sucursales junto con una taza medidora especial; en paralelo, buscar una alternativa de tira reactiva para verificar la concentración.',
+ '36':'Reforzar la revisión de productos según su fecha de vencimiento, con énfasis en jugos y en los alimentos de G&G — deben retirarse a la 1:00 p.m. conforme al protocolo, no dejarse en exhibición hasta la noche.',
+ '43':'Instalar o dar mantenimiento al sistema de potabilización (cloración/filtros) y documentar su verificación periódica.',
+ '49':'Asignar trapos, jergas y escobas con código de colores según su uso específico (área húmeda, seca, sanitarios); establecer rutina de lavado y desinfección diaria.',
+ '50':'Buscar un proveedor único de Cafiza (o similar) para el mantenimiento de cafeteras en todas las sucursales, y programar una capacitación general de limpieza de equipo de café.',
+ '51':'Impartir capacitación sobre limpieza profunda de wafflera y horno, y generar una ficha técnica de referencia con el procedimiento paso a paso.',
+ '54':'Reemplazar tablas de corte percudidas o dañadas; establecer limpieza inmediata después de cada uso.',
+ '55':'Instalar protección en drenajes para evitar entrada de plagas (rejillas, coladeras selladas).',
+ '56':'Reponer o reubicar dispositivos de control de plagas (trampas, luz UV) en puntos estratégicos; verificar vigencia con el proveedor.',
+ '61':'Reforzar el lavado de manos obligatorio al inicio de turno y tras tocar objetos externos; colocar recordatorio visual.',
+ '62':'Reforzar el uso obligatorio de cofia; reportar formalmente a quien no la porte correctamente, extendiendo este seguimiento a la presentación general del morista (uniforme e higiene personal).',
+ '66':'Abastecer el botiquín conforme al contenido mínimo que exige la NOM-005-STPS. Como opción de compra: proveedores en CDMX como Proyecto Red o Provyd venden kits ya armados según esta norma, con ficha técnica de contenido incluida.',
+ '69':'Solicitar al proveedor de fumigación el programa vigente, licencia sanitaria y hoja de fumigación; archivar copia en la sucursal.',
+ '70':'Establecer el registro diario de cloro residual libre y programar análisis periódicos de coliformes en agua.',
+ '71':'Implementar bitácoras de limpieza y desinfección (instalaciones, equipo, utensilios) con firma de responsable por turno.',
+ '73':'Coordinar sesión con Jon y Martín (equipo de mantenimiento) para definir un plan de acción de bitácoras de mantenimiento preventivo, con seguimientos más concretos, firma de gerentes de sucursal y mejor visibilidad del estatus.',
+ '74':'Verificar vigencia y visibilidad de extintores, salidas de emergencia y rutas de evacuación; recargar/reponer señalización si es necesario.',
+};
 const ROMS=MASTER.map(a=>a.rom);
 // Sucursales reales (CDI inactiva temporalmente)
 const SUCURSALES=[
@@ -650,13 +688,23 @@ function uploadPhotoToCloud(dataUrl){
 function fetchCloudPhoto(id){
  if(PHOTO_CACHE[id])return Promise.resolve(PHOTO_CACHE[id]);
  return fetch(CLOUD+'?action=photo&id='+encodeURIComponent(id),{cache:'no-store'})
-   .then(r=>r.json()).then(d=>{if(d&&d.ok){const uri='data:'+d.mime+';base64,'+d.base64;PHOTO_CACHE[id]=uri;return uri;}return null;})
-   .catch(()=>null);
+   .then(r=>r.json()).then(d=>{
+     if(d&&d.ok){const uri='data:'+d.mime+';base64,'+d.base64;PHOTO_CACHE[id]=uri;return uri;}
+     console.warn('[FOTO] No se pudo cargar. id=',id,' respuesta del servidor:',d);
+     return null;
+   })
+   .catch(err=>{console.warn('[FOTO] Error de red/fetch. id=',id,' error:',err);return null;});
 }
 function hydrateCloudPhotos(root){
  root.querySelectorAll('img[data-cloudid]').forEach(img=>{
    const id=img.dataset.cloudid;
-   fetchCloudPhoto(id).then(uri=>{if(uri){img.src=uri;const a=img.closest('a.foto-link');if(a)a.href=uri;}});
+   fetchCloudPhoto(id).then(uri=>{
+     if(uri){img.src=uri;const a=img.closest('a.foto-link');if(a)a.href=uri;}
+     else{
+       const wrap=img.closest('a.foto-link')||img;
+       wrap.outerHTML='<span class="foto-fail" title="No se pudo cargar esta foto desde la nube (id: '+id+')">📷⚠️</span>';
+     }
+   });
  });
 }
 function fotoTagHTML(v){
@@ -841,7 +889,8 @@ function renderEjecutivo(scored,latest,dates){
  const recAll=Object.entries(cnt).filter(([id,d])=>d.n>=2).sort((a,b)=>b[1].n-a[1].n);
  document.getElementById('ejeRecurrentes').innerHTML=recAll.length?recAll.map(([id,d])=>{
    const it=ITEM[id];
-   return `<div class="rec"><span class="dot s-${it.peso===2?'crit':'warn'}"></span><span class="txt"><b>${it.rom}.</b> ${it.texto}<br><span style="font-size:12px;color:var(--ink-3)">Falla en: ${[...d.sucs].join(', ')}</span></span><span class="cnt">${d.n}×</span></div>`;
+   const sug=SUGERIDO[id];
+   return `<div class="rec"><span class="dot s-${it.peso===2?'crit':'warn'}"></span><span class="txt"><b>${it.rom}.</b> ${it.texto}<br><span style="font-size:12px;color:var(--ink-3)">Falla en: ${[...d.sucs].join(', ')}</span>${sug?`<br><span style="font-size:12.5px;color:var(--accent);display:inline-block;margin-top:4px">💡 <b>Sugerido:</b> ${sug}</span>`:''}</span><span class="cnt">${d.n}×</span></div>`;
  }).join(''):'<div class="empty">Ningún punto se repite todavía en 2 o más sucursales.</div>';
 }
 
@@ -1289,6 +1338,7 @@ function buildExecutiveReportHTML(){
   .rec{background:#fff;border:1px solid #E0E8F2;border-left:4px solid #B26B00;border-radius:10px;padding:11px 14px;margin-bottom:10px;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
   .rec b.rom{color:#1C5DB8}
   .rec .who{font-size:12px;color:#7C8CA1;margin-top:3px}
+  .rec .sug{font-size:12.5px;color:#1C5DB8;margin-top:5px}
   .rec .n{flex:none;background:#F3E7D4;color:#B26B00;font-weight:800;font-size:12.5px;padding:3px 10px;border-radius:20px}
   .chip{display:inline-block;background:#F3E7D4;color:#B26B00;font-size:12px;font-weight:700;padding:4px 11px;border-radius:20px;margin:0 6px 6px 0}
   .foot{margin-top:26px;font-size:11px;color:#7C8CA1;border-top:1px solid #E0E8F2;padding-top:10px}
@@ -1317,7 +1367,7 @@ function buildExecutiveReportHTML(){
  ${rubros.map(x=>`<div class="rb"><div><b>${x.r}.</b> ${esc(AREA_NAME[x.r])}<div class="bar"><i style="width:${Math.round(x.v)}%;background:${col(x.v)}"></i></div></div><b style="color:${col(x.v)}">${Math.round(x.v)}%</b></div>`).join('')||'<p class="intro">Sin datos.</p>'}
 
  <h2>Hallazgos recurrentes (2 o más sucursales)</h2>
- ${recAll.length?recAll.map(([id,d])=>{const it=ITEM[id];return `<div class="rec"><div><b class="rom">${it.rom}.</b> ${esc(it.texto)}<div class="who">Falla en: ${[...d.sucs].map(esc).join(', ')}</div></div><span class="n">${d.n}×</span></div>`;}).join(''):'<p class="intro">Ningún punto se repite todavía en 2 o más sucursales.</p>'}
+ ${recAll.length?recAll.map(([id,d])=>{const it=ITEM[id];const sug=SUGERIDO[id];return `<div class="rec"><div><b class="rom">${it.rom}.</b> ${esc(it.texto)}<div class="who">Falla en: ${[...d.sucs].map(esc).join(', ')}</div>${sug?`<div class="sug">💡 <b>Sugerido:</b> ${esc(sug)}</div>`:''}</div><span class="n">${d.n}×</span></div>`;}).join(''):'<p class="intro">Ningún punto se repite todavía en 2 o más sucursales.</p>'}
 
  <h2>Sucursales pendientes de primera visita</h2>
  ${pendientes.length?`<div>${pendientes.map(n=>`<span class="chip">${esc(n)}</span>`).join('')}</div>`:'<p class="intro">Todas las sucursales activas ya cuentan con al menos una auditoría. 🎉</p>'}
