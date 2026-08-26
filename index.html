@@ -724,13 +724,7 @@ function deleteAudit(id){
 }
 
 /* ============ SCORING ============ */
-function findingStreak(sucursal,itemId,fecha){
- const hist=DB.filter(a=>a.sucursal===sucursal&&a.fecha<=fecha).sort((a,b)=>b.fecha.localeCompare(a.fecha));
- let n=0;
- for(const a of hist){const r=a.resultados[itemId];if(r&&r.estado==='no')n++;else break;}
- return n;
-}
-function score(res,sucursal,fecha){
+function score(res){
  let num=0,den=0,byArea={},findings=[],critOpen=0;
  ROMS.forEach(r=>byArea[r]={num:0,den:0});
  for(const id in ITEM){
@@ -738,8 +732,7 @@ function score(res,sucursal,fecha){
    const v=EST[estado].v; if(v===null)continue;
    num+=v*it.peso; den+=it.peso; byArea[it.rom].num+=v*it.peso; byArea[it.rom].den+=it.peso;
    if(estado==='no'){
-     const streak=(sucursal&&fecha)?findingStreak(sucursal,id,fecha):1;
-     findings.push({id,...it,estado,coment:r.coment||'',estatus:r.estatus||'abierto',fotos:r.fotos||[],streak});
+     findings.push({id,...it,estado,coment:r.coment||'',estatus:r.estatus||'abierto',fotos:r.fotos||[]});
      if(it.peso===2 && (r.estatus||'abierto')!=='cerrado') critOpen++;
    }
  }
@@ -775,7 +768,7 @@ function renderDash(){
  renderFilters();
  const latest=latestBySuc();
  // scored latest for ACTIVE sucursales only
- let scored=SUC_ACT.filter(n=>latest[n]).map(n=>({a:latest[n],s:score(latest[n].resultados,latest[n].sucursal,latest[n].fecha)}));
+ let scored=SUC_ACT.filter(n=>latest[n]).map(n=>({a:latest[n],s:score(latest[n].resultados)}));
  // rubro-aware pct for sucursal comparisons
  const rubActive=fRubro!=='Todos';
  const pctOf=x=>rubActive?(x.s.areaPct[fRubro]) : x.s.pct;
@@ -825,21 +818,19 @@ function renderEjecutivo(scored,latest,dates){
  const bajoMeta=valid.filter(x=>x.s.pct<META).length;
  const totalCrit=scored.reduce((t,x)=>t+x.s.critOpen,0);
  const totalHallazgos=scored.reduce((t,x)=>t+x.s.findings.length,0);
- const totalReinc=scored.reduce((t,x)=>t+x.s.findings.filter(f=>(f.streak||1)>=2).length,0);
  document.getElementById('ejeResumen').innerHTML=`
   <p>Se realizó la auditoría a <b>${scored.length} de ${SUC_ACT.length}</b> sucursales activas${dates.length?`, entre el <b>${fmtLong(dates[0])}</b> y el <b>${fmtLong(dates[dates.length-1])}</b>`:''}.</p>
   <p>El cumplimiento promedio fue de <b>${globalPct}%</b> (meta: ${META}%). <b>${bajoMeta}</b> de ${valid.length} sucursales auditadas están por debajo de la meta.</p>
-  <p>Se identificaron <b>${totalHallazgos}</b> hallazgos en total, de los cuales <b>${totalCrit}</b> son críticos y siguen abiertos${totalReinc?`, y <b>${totalReinc}</b> llevan 2 o más visitas seguidas sin resolverse`:''}.</p>`;
+  <p>Se identificaron <b>${totalHallazgos}</b> hallazgos en total, de los cuales <b>${totalCrit}</b> son críticos y siguen abiertos.</p>`;
 
  const ranking=scored.slice().sort((a,b)=>a.s.pct-b.s.pct);
  document.getElementById('ejeRanking').innerHTML=ranking.length?ranking.map(x=>{
    const cls=sem(x.s.pct);
    const abiertos=x.s.findings.filter(f=>f.estatus!=='cerrado').length;
-   const reinc=x.s.findings.filter(f=>(f.streak||1)>=2).length;
    return `<div class="suc"><div class="name">${x.a.sucursal}<span class="dt">${fmtLong(x.a.fecha)} · ${x.a.evaluador||'—'}</span></div>
      <div class="track"><div class="meta-mark" style="left:${META}%"></div><div class="fill bg-${cls}" style="width:${x.s.pct}%"></div></div>
      <div class="pct c-${cls}">${x.s.pct}%</div>
-     <div class="trend" style="min-width:170px;text-align:right;font-size:12px;color:var(--ink-3)">${abiertos} abiertos · ${x.s.critOpen} críticos${reinc?' · '+reinc+' reincidentes':''}</div></div>`;
+     <div class="trend" style="min-width:170px;text-align:right;font-size:12px;color:var(--ink-3)">${abiertos} abiertos · ${x.s.critOpen} críticos</div></div>`;
  }).join(''):'<div class="empty">Aún no hay auditorías registradas.</div>';
 
  const pendientes=SUC_ACT.filter(n=>!latest[n]);
@@ -928,12 +919,9 @@ function renderPlan(scored){
 }
 function fitemHTML(f){
  const thumbs=f.fotos&&f.fotos.length?`<div class="thumbs">${f.fotos.map(fotoTagHTML).join('')}</div>`:'';
- const streak=f.streak||1;
- const recChip=streak>=3?`<span class="chip crit" style="margin-right:6px">🔁 ${streak}ª visita seguida</span>`
-   :streak===2?`<span class="chip warn" style="margin-right:6px">🔁 2ª visita seguida</span>`:'';
  return `<div class="fitem">
    <div class="fmain">
-     <div class="ftext">${f.peso===2?'<span class="chip crit" style="margin-right:6px">Crítico</span>':''}${recChip}${f.texto}</div>
+     <div class="ftext">${f.peso===2?'<span class="chip crit" style="margin-right:6px">Crítico</span>':''}${f.texto}</div>
      <div class="fsub">${f.rom}. ${f.area}${f.coment?' — “'+f.coment+'”':''}</div>${thumbs}</div>
    <div class="fmeta">
      <select class="est" data-e="${f.estatus}" data-aid="${f.auditId}" data-iid="${f.id}">
@@ -992,7 +980,7 @@ function drawDonut(vals){
 /* ============ REPORTE ============ */
 function openReportForSuc(suc){const a=latestBySuc()[suc];if(a)openReport(a.id);}
 function openReport(auditId){
- const a=DB.find(x=>x.id===auditId); if(!a)return; const s=score(a.resultados,a.sucursal,a.fecha);
+ const a=DB.find(x=>x.id===auditId); if(!a)return; const s=score(a.resultados);
  const LOGO=(document.querySelector('header .mark')||{}).src||'';
  const findings=s.findings.slice().sort((p,q)=>(q.peso-p.peso));
  const notas=Object.keys(a.resultados).filter(id=>a.resultados[id].estado==='cumple'&&a.resultados[id].coment&&ITEM[id]).map(id=>({...ITEM[id],coment:a.resultados[id].coment}));
@@ -1015,8 +1003,8 @@ function openReport(auditId){
     <div style="font-size:13px;color:var(--ink-2)">${areasBad.map(x=>`${x.r}. ${AREA_NAME[x.r]} — <b class="c-${sem(x.v)}">${x.v}%</b>`).join(' · ')}</div>`:''}
   <div class="rep-sec-h">Hallazgos y plan de acción (${findings.length})</div>
   ${findings.length?findings.map(f=>`<div class="rep-find ${f.estado}">
-     <div class="rf-t">${f.peso===2?'⚠ ':''}${(f.streak||1)>=2?'🔁 ':''}${f.texto}</div>
-     <div class="rf-s">${f.rom}. ${f.area} · No cumple${(f.streak||1)>=2?' · '+(f.streak)+'ª visita seguida sin resolver':''}${f.coment?' — “'+f.coment+'”':''}</div>
+     <div class="rf-t">${f.peso===2?'⚠ ':''}${f.texto}</div>
+     <div class="rf-s">${f.rom}. ${f.area} · No cumple${f.coment?' — “'+f.coment+'”':''}</div>
      <div class="rf-grid"><span>Estatus: <b>${({abierto:'Abierto',en_proceso:'En proceso',cerrado:'Cerrado'})[f.estatus]}</b></span></div>
      ${f.fotos&&f.fotos.length?`<div class="thumbs" style="margin-top:8px">${f.fotos.map(fotoTagHTML).join('')}</div>`:''}
    </div>`).join(''):'<div class="empty">Sin hallazgos: cumplimiento total. 🎉</div>'}
@@ -1039,7 +1027,7 @@ function openReport(auditId){
  hydrateCloudPhotos(modal);
 }
 function buildReportHTML(a,resolvedFotos){
- const s=score(a.resultados,a.sucursal,a.fecha);
+ const s=score(a.resultados);
  const LOGO=(document.querySelector('header .mark')||{}).src||'';
  const esc=v=>String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
  const col=v=>v>=META?'#1F7A4D':v>=70?'#B26B00':'#B4302E';
@@ -1089,8 +1077,8 @@ function buildReportHTML(a,resolvedFotos){
   ${rubros.map(x=>`<div class="rb"><span>${x.r}. ${esc(AREA_NAME[x.r])}</span><div class="bar"><i style="width:${x.v}%;background:${col(x.v)}"></i></div><b style="color:${col(x.v)}">${x.v}%</b></div>`).join('')}
   <h2>Hallazgos y plan de acción (${findings.length})</h2>
   ${findings.length?findings.map(f=>`<div class="find">
-    <div class="ft">${f.peso===2?'⚠ ':''}${(f.streak||1)>=2?'🔁 ':''}${esc(f.texto)}</div>
-    <div class="fs">${f.rom}. ${esc(f.area)} · No cumple${(f.streak||1)>=2?' · '+(f.streak)+'ª visita seguida sin resolver':''}${f.coment?' — “'+esc(f.coment)+'”':''}</div>
+    <div class="ft">${f.peso===2?'⚠ ':''}${esc(f.texto)}</div>
+    <div class="fs">${f.rom}. ${esc(f.area)} · No cumple${f.coment?' — “'+esc(f.coment)+'”':''}</div>
     <span class="st">${EL[f.estatus]||''}</span>
     ${(()=>{const fotos=resolvedFotos&&resolvedFotos[f.id]?resolvedFotos[f.id]:(f.fotos||[]).filter(v=>!isCloudPhotoRef(v));return fotos.length?`<div class="ev">${fotos.map(fotoTagHTML).join('')}</div>`:'';})()}</div>`).join(''):'<p style="color:#7C8CA1">Sin hallazgos: cumplimiento total. 🎉</p>'}
   ${notas.length?`<h2>Observaciones</h2>${notas.map(n=>`<div class="nota">• <b>${n.rom}.</b> ${esc(n.texto)} — “${esc(n.coment)}”</div>`).join('')}`:''}
@@ -1113,12 +1101,10 @@ async function downloadReport(a){
 function mailReport(a,s){
  const rubros=ROMS.map(r=>({r,v:s.areaPct[r]})).filter(x=>x.v!==null).sort((x,y)=>x.v-y.v);
  const criticos=s.findings.filter(f=>f.peso===2);
- const reincidentes=s.findings.filter(f=>(f.streak||1)>=2).sort((x,y)=>(y.streak||1)-(x.streak||1));
  const rub=rubros.map(x=>`  ${x.r}. ${AREA_NAME[x.r]}: ${x.v}%`).join('\n')||'  (sin datos)';
  const crit=criticos.length?criticos.map(f=>`  • ${f.texto}${f.coment?' — '+f.coment:''}`).join('\n'):'  Ninguno';
- const reinc=reincidentes.length?reincidentes.map(f=>`  • ${f.texto} (${f.streak}ª visita seguida)`).join('\n'):'  Ninguno';
  const subject=`Auditoría Higiene — ${a.sucursal} — ${fmtLong(a.fecha)} — ${s.pct}%`;
- const body=`Resumen de la auditoría de higiene sanitaria.\n\nSucursal: ${a.sucursal}\nFecha: ${fmtLong(a.fecha)}\nCumplimiento: ${s.pct}% (meta ${META}%)\nHallazgos: ${s.findings.length} · Críticos abiertos: ${s.critOpen}\n\nCalificación por rubro:\n${rub}\n\nHallazgos críticos:\n${crit}\n\nSin resolver en visitas consecutivas:\n${reinc}\n\nEl reporte completo con fotos va adjunto (archivo HTML: se abre en el navegador).\n\n${a.evaluador}`;
+ const body=`Resumen de la auditoría de higiene sanitaria.\n\nSucursal: ${a.sucursal}\nFecha: ${fmtLong(a.fecha)}\nCumplimiento: ${s.pct}% (meta ${META}%)\nHallazgos: ${s.findings.length} · Críticos abiertos: ${s.critOpen}\n\nCalificación por rubro:\n${rub}\n\nHallazgos críticos:\n${crit}\n\nEl reporte completo con fotos va adjunto (archivo HTML: se abre en el navegador).\n\n${a.evaluador}`;
  window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,'_blank');
  toast('Correo listo · adjunta el reporte HTML');
 }
@@ -1260,7 +1246,7 @@ document.getElementById('exportBtn').addEventListener('click',exportData);
 document.getElementById('importFile').addEventListener('change',e=>{if(e.target.files[0])importData(e.target.files[0]);e.target.value='';});
 function buildExecutiveReportHTML(){
  const latest=latestBySuc();
- const scored=SUC_ACT.filter(n=>latest[n]).map(n=>({a:latest[n],s:score(latest[n].resultados,latest[n].sucursal,latest[n].fecha)}));
+ const scored=SUC_ACT.filter(n=>latest[n]).map(n=>({a:latest[n],s:score(latest[n].resultados)}));
  const valid=scored.filter(x=>x.s.pct!==null);
  const dates=DB.map(a=>a.fecha).sort();
  const globalPct=valid.length?Math.round(valid.reduce((t,x)=>t+x.s.pct,0)/valid.length*10)/10:0;
@@ -1324,8 +1310,7 @@ function buildExecutiveReportHTML(){
  <h2>Ranking de sucursales</h2>
  ${ranking.map(x=>{
    const abiertos=x.s.findings.filter(f=>f.estatus!=='cerrado').length;
-   const reinc=x.s.findings.filter(f=>(f.streak||1)>=2).length;
-   return `<div class="rb"><div>${esc(x.a.sucursal)}<span class="sub">${fmtLong(x.a.fecha)} · ${esc(x.a.evaluador||'—')} · ${abiertos} abiertos · ${x.s.critOpen} críticos${reinc?' · '+reinc+' reincidentes':''}</span><div class="bar"><i style="width:${x.s.pct}%;background:${col(x.s.pct)}"></i></div></div><b style="color:${col(x.s.pct)}">${x.s.pct}%</b></div>`;
+   return `<div class="rb"><div>${esc(x.a.sucursal)}<span class="sub">${fmtLong(x.a.fecha)} · ${esc(x.a.evaluador||'—')} · ${abiertos} abiertos · ${x.s.critOpen} críticos</span><div class="bar"><i style="width:${x.s.pct}%;background:${col(x.s.pct)}"></i></div></div><b style="color:${col(x.s.pct)}">${x.s.pct}%</b></div>`;
  }).join('')||'<p class="intro">Sin auditorías registradas.</p>'}
 
  <h2>Promedio por rubro (todas las sucursales)</h2>
