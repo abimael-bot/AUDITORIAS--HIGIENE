@@ -269,7 +269,8 @@
   .followup.fu-no{background:var(--crit-soft)}
   .fu-extra{display:none;gap:10px;flex-wrap:wrap;flex-basis:100%}
   .followup .field{flex:1;min-width:150px} .followup .field input{background:var(--surface)} .followup .full{flex-basis:100%}
-  .photobtn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;padding:6px 0}
+  .photobtn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;padding:6px 10px;border:1px solid var(--accent-soft);border-radius:8px;background:var(--accent-soft)}
+  .photobtns{display:flex;gap:8px;flex-wrap:wrap}
   .photobtn input{display:none}
 
   .scorebox{position:sticky;top:56px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
@@ -1186,7 +1187,10 @@ function itemHTML(it){
    <div class="followup" data-id="${id}">
      <div class="field full"><label>Comentario / observación</label><input class="fu-txt" type="text" data-id="${id}" data-k="coment" placeholder="Anota lo observado"></div>
      <div class="fu-extra">
-       <label class="photobtn full">📷 Adjuntar foto(s) de evidencia<input class="fu-photo" type="file" accept="image/*" multiple data-id="${id}"></label>
+       <div class="photobtns">
+         <label class="photobtn">📷 Tomar foto<input class="fu-photo" type="file" accept="image/*" capture="environment" multiple data-id="${id}"></label>
+         <label class="photobtn">🖼️ Elegir de galería<input class="fu-photo" type="file" accept="image/*" multiple data-id="${id}"></label>
+       </div>
        <div class="thumbs full" data-thumbs="${id}"></div>
      </div>
    </div></div>`;
@@ -1198,7 +1202,7 @@ function onEst(e){
  const fu=e.currentTarget.parentElement.querySelector('.followup');
  fu.classList.toggle('show',v==='no'||v==='cumple');
  fu.classList.toggle('fu-no',v==='no');
- const ex=fu.querySelector('.fu-extra'); if(ex)ex.style.display=(v==='no')?'flex':'none';
+ const ex=fu.querySelector('.fu-extra'); if(ex)ex.style.display=(v==='no'||v==='cumple')?'flex':'none';
  recalc();
 }
 function onPhoto(e){
