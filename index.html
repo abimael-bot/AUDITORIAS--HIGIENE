@@ -211,7 +211,8 @@
   .chip.ori-norma{background:var(--surface-3);color:var(--ink-2)} .chip.ori-mm{background:var(--accent-soft);color:var(--accent)} .chip.ori-ambos{background:var(--good-soft);color:var(--good)}
 
   /* NUEVA */
-  .audit-top{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .audit-top{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:8px}
+  .tipohint{font-size:12.5px;color:var(--ink-2);margin:0 0 16px}
   .field{display:flex;flex-direction:column;gap:5px}
   .field label{font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
   .field input,.field select,.field textarea{font:inherit;padding:9px 11px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface);color:var(--ink)}
@@ -462,10 +463,12 @@
   <section class="view" id="view-nueva">
     <div class="audit-top">
       <div class="field"><label>Sucursal</label><select id="f-suc"></select></div>
+      <div class="field"><label>Tipo de auditoría</label><select id="f-tipo"><option value="general">General (los 84 puntos)</option><option value="sucursal">Sucursal (solo puntos de sucursal)</option></select></div>
       <div class="field"><label>Fecha</label><input type="date" id="f-fecha"></div>
       <div class="field"><label>Evaluador</label><input type="text" id="f-eval" placeholder="Nombre"></div>
       <div class="field"><label>Encargado en turno</label><input type="text" id="f-enc" placeholder="Nombre"></div>
     </div>
+    <p class="tipohint" id="tipoHint"></p>
     <div class="audit-layout">
       <div id="areas"></div>
       <aside class="scorebox">
@@ -488,6 +491,7 @@
       <span class="li"><span class="chip ori-mm">Mora Mora</span> del recorrido interno</span>
       <span class="li"><span class="chip ori-ambos">Ambos</span> presente en los dos</span>
       <span class="li"><span class="chip crit">Crítico ×2</span> peso doble</span>
+      <span class="li"><span class="chip ori-norma">Corporativo</span> lo resuelve corporativo (13 puntos); el resto es de sucursal (71)</span>
     </div>
     <div id="maestro"></div>
   </section>
@@ -602,6 +606,9 @@ const MASTER=[
 ];
 const ITEM={}; MASTER.forEach(a=>a.items.forEach(it=>{ITEM[it[0]]={id:it[0],texto:it[1],origen:it[2],peso:it[3],rom:a.rom,area:a.area};}));
 const AREA_NAME={}; MASTER.forEach(a=>AREA_NAME[a.rom]=a.area);
+/* Responsable de resolver cada punto: 'sucursal' (71) o 'corporativo' (13) */
+const CORP=new Set(['3','9','10','14','15','42','43','55','56','70','74','75','76']);
+Object.keys(ITEM).forEach(id=>{ITEM[id].resp=CORP.has(id)?'corporativo':'sucursal';});
 const SUGERIDO={
  '1':'Programar mantenimiento correctivo de acabados (pintura, impermeabilización) y limpieza profunda; agregar a bitácora de mantenimiento preventivo.',
  '2':'Reforzar tallado/trapeado diario; evaluar tratamiento especial (sellador o reemplazo) si hay manchas persistentes.',
@@ -666,7 +673,7 @@ function save(d){DB=d;try{localStorage.setItem(KEY,JSON.stringify(d));}catch(e){
 const CLOUD='https://script.google.com/macros/s/AKfycbyWuPNcW5ke2dv9oBmU1Fv5IjP2blQC9CUNXps9FPlFK9VZq-RLzAZ7ljIVBGiIhL8s/exec';
 let cloudOK=false;
 function liteAudit(a){
- const s=score(a.resultados); const res={};
+ const s=scoreAudit(a); const res={};
  for(const id in a.resultados){
    const r=a.resultados[id];
    // fotos que vamos a mandar a la nube: si es foto local (base64) usamos su id de Drive ya subido;
@@ -677,7 +684,7 @@ function liteAudit(a){
    }).filter(Boolean);
    res[id]={estado:r.estado,coment:r.coment||'',estatus:r.estatus||'abierto',fotos};
  }
- return {id:a.id,sucursal:a.sucursal,fecha:a.fecha,evaluador:a.evaluador||'',encargado:a.encargado||'',cumplimiento:s.pct,hallazgos:s.findings.length,criticos:s.critOpen,resultados:res};
+ return {id:a.id,sucursal:a.sucursal,fecha:a.fecha,tipo:a.tipo||'general',evaluador:a.evaluador||'',encargado:a.encargado||'',cumplimiento:s.pct,hallazgos:s.findings.length,criticos:s.critOpen,resultados:res};
 }
 /* ---- fotos en la nube (Google Drive vía Apps Script) ---- */
 const PHOTO_CACHE={};
@@ -773,10 +780,11 @@ function deleteAudit(id){
 }
 
 /* ============ SCORING ============ */
-function score(res){
+function score(res,scope){
  let num=0,den=0,byArea={},findings=[],critOpen=0;
  ROMS.forEach(r=>byArea[r]={num:0,den:0});
  for(const id in ITEM){
+   if(scope&&!scope(id))continue;
    const it=ITEM[id]; const r=res[id]; const estado=r?r.estado:'cumple';
    const v=EST[estado].v; if(v===null)continue;
    num+=v*it.peso; den+=it.peso; byArea[it.rom].num+=v*it.peso; byArea[it.rom].den+=it.peso;
@@ -790,6 +798,27 @@ function score(res){
  return {pct,areaPct,findings,critOpen};
 }
 function areaScore(res,rom){const s=score(res);return s.areaPct[rom];}
+/* Auditoría de sucursal = solo puntos de sucursal; los de corporativo se toman de la última general de esa sucursal */
+function baselineGeneral(a){
+ let best=null;
+ DB.forEach(x=>{if(x.id!==a.id&&x.sucursal===a.sucursal&&x.tipo!=='sucursal'&&x.fecha<=a.fecha){if(!best||x.fecha>best.fecha||(x.fecha===best.fecha&&x.id>best.id))best=x;}});
+ return best;
+}
+function effective(a){
+ if(a.tipo!=='sucursal')return {res:a.resultados,src:null,base:null};
+ const base=baselineGeneral(a); const res={},src={};
+ for(const id in ITEM){
+   if(ITEM[id].resp==='sucursal'){if(a.resultados[id]){res[id]=a.resultados[id];src[id]=a.id;}}
+   else if(base){if(base.resultados[id]){res[id]=base.resultados[id];src[id]=base.id;}}
+   else res[id]={estado:'na'};
+ }
+ return {res,src,base};
+}
+function scoreAudit(a){
+ const e=effective(a); const s=score(e.res);
+ if(e.src)s.findings.forEach(f=>{f.auditId=e.src[f.id]||a.id;});
+ s.base=e.base; return s;
+}
 function sem(p){return p>=85?'good':p>=70?'warn':'crit';}
 function latestBySuc(){const m={};DB.forEach(a=>{if(!m[a.sucursal]||a.fecha>m[a.sucursal].fecha)m[a.sucursal]=a;});return m;}
 function prevOf(a){return DB.filter(x=>x.sucursal===a.sucursal&&x.fecha<a.fecha).sort((p,q)=>q.fecha.localeCompare(p.fecha))[0];}
@@ -817,7 +846,7 @@ function renderDash(){
  renderFilters();
  const latest=latestBySuc();
  // scored latest for ACTIVE sucursales only
- let scored=SUC_ACT.filter(n=>latest[n]).map(n=>({a:latest[n],s:score(latest[n].resultados)}));
+ let scored=SUC_ACT.filter(n=>latest[n]).map(n=>({a:latest[n],s:scoreAudit(latest[n])}));
  // rubro-aware pct for sucursal comparisons
  const rubActive=fRubro!=='Todos';
  const pctOf=x=>rubActive?(x.s.areaPct[fRubro]) : x.s.pct;
@@ -900,10 +929,10 @@ function renderSucBars(latest,pctOf,rubActive){
    if(!s.act)return `<div class="suc inact"><div class="name">${s.n}<span class="dt">inactiva temporalmente</span></div><div class="track"><div class="fill" style="width:0"></div></div><div class="pct">—</div><div class="trend"></div></div>`;
    const a=latest[s.n];
    if(!a)return `<div class="suc none"><div class="name">${s.n}<span class="dt">sin auditar</span></div><div class="track"><div class="meta-mark" style="left:${META}%"></div><div class="fill" style="width:0"></div></div><div class="pct">—</div><div class="trend"></div></div>`;
-   const sc=score(a.resultados); const p=rubActive?sc.areaPct[fRubro]:sc.pct;
+   const sc=scoreAudit(a); const p=rubActive?sc.areaPct[fRubro]:sc.pct;
    if(p===null)return `<div class="suc"><div class="name">${s.n}<span class="dt">${fmt(a.fecha)}</span></div><div class="track"><div class="fill" style="width:0"></div></div><div class="pct">N.A.</div><div class="trend"></div></div>`;
    const cls=sem(p); const pv=prevOf(a); let tr='<span class="flat">–</span>';
-   if(pv){const ps=score(pv.resultados);const pp=rubActive?ps.areaPct[fRubro]:ps.pct;if(pp!==null)tr=p>pp+0.5?'<span class="up">▲</span>':p<pp-0.5?'<span class="down">▼</span>':'<span class="flat">=</span>';}
+   if(pv){const ps=scoreAudit(pv);const pp=rubActive?ps.areaPct[fRubro]:ps.pct;if(pp!==null)tr=p>pp+0.5?'<span class="up">▲</span>':p<pp-0.5?'<span class="down">▼</span>':'<span class="flat">=</span>';}
    return `<div class="suc"><div class="name">${s.n}<span class="dt">${fmt(a.fecha)}</span></div>
      <div class="track"><div class="meta-mark" style="left:${META}%"></div><div class="fill bg-${cls}" style="width:${p}%"></div></div>
      <div class="pct c-${cls}">${p}%</div><div class="trend">${tr}</div></div>`;
@@ -931,10 +960,10 @@ function renderRubroBars(rubroAvg){
 /* ---- PLAN por sucursal ---- */
 function renderPlan(scored){
  let groups=scored.map(x=>{
-   let fs=x.s.findings.map(f=>({...f,auditId:x.a.id}));
+   let fs=x.s.findings.map(f=>({...f,auditId:f.auditId||x.a.id}));
    if(fRubro!=='Todos')fs=fs.filter(f=>f.rom===fRubro);
    const shown=curFilter==='todos'?fs:fs.filter(f=>f.estatus===curFilter);
-   return {suc:x.a.sucursal,fecha:x.a.fecha,pct:x.s.pct,all:fs,shown,auditId:x.a.id,evaluador:x.a.evaluador||''};
+   return {suc:x.a.sucursal,fecha:x.a.fecha,pct:x.s.pct,all:fs,shown,auditId:x.a.id,evaluador:x.a.evaluador||'',tipo:x.a.tipo||'general',baseFecha:(x.s.base&&x.s.base.fecha)||null};
  });
  // si se filtra por estatus (abiertos/en proceso/cerrados), ocultar sucursales sin hallazgos que apliquen a ese filtro;
  // pero SIEMPRE mostrar la sucursal cuando el filtro es "Todos" (para que el botón de Borrar esté disponible aunque no tenga hallazgos)
@@ -946,7 +975,7 @@ function renderPlan(scored){
    const cls=sem(g.pct);
    const items=g.all.length===0?'<div class="fitem"><div class="empty" style="padding:10px">Sin hallazgos: esta auditoría no tiene puntos "No cumple". 🎉</div></div>':(g.shown.length?g.shown.map(f=>fitemHTML(f)).join(''):'<div class="fitem"><div class="empty" style="padding:10px">Sin tareas en este estatus.</div></div>');
    return `<details class="sucgroup"${i===0?' open':''}>
-     <summary><span class="caret">▸</span><span class="sname">${g.suc}</span>
+     <summary><span class="caret">▸</span><span class="sname">${g.suc}</span>${g.tipo==='sucursal'?`<span class="chip ori-mm" style="margin-right:8px" title="Auditoría de sucursal: los puntos de corporativo vienen de la última auditoría general${g.baseFecha?' ('+fmtLong(g.baseFecha)+')':' (aún no hay una)'}">Sucursal</span>`:''}
        <span class="score bg-${cls}" style="color:#fff">${g.pct}%</span>
        <span class="statchips"><span class="sc-chip ab">${ab} abiertos</span><span class="sc-chip pr">${pr} en proceso</span><span class="sc-chip ce">${ce} cerrados</span>
        <button class="btn sm" data-report="${g.suc}">📄 Reporte</button>
@@ -971,7 +1000,7 @@ function fitemHTML(f){
  const thumbs=f.fotos&&f.fotos.length?`<div class="thumbs">${f.fotos.map(fotoTagHTML).join('')}</div>`:'';
  return `<div class="fitem">
    <div class="fmain">
-     <div class="ftext">${f.peso===2?'<span class="chip crit" style="margin-right:6px">Crítico</span>':''}${f.texto}</div>
+     <div class="ftext">${f.peso===2?'<span class="chip crit" style="margin-right:6px">Crítico</span>':''}${f.resp==='corporativo'?'<span class="chip ori-norma" style="margin-right:6px">Corporativo</span>':''}${f.texto}</div>
      <div class="fsub">${f.rom}. ${f.area}${f.coment?' — “'+f.coment+'”':''}</div>${thumbs}</div>
    <div class="fmeta">
      <select class="est" data-e="${f.estatus}" data-aid="${f.auditId}" data-iid="${f.id}">
@@ -988,7 +1017,7 @@ function drawLine(scored){
  x.clearRect(0,0,w,h);
  // which sucursales: if filtered, only that one; else all active audited
  let sucs = fSuc!=='Todas' ? [fSuc] : SUC_ACT.filter(n=>DB.some(a=>a.sucursal===n));
- const series=sucs.map((n)=>({n,pts:DB.filter(a=>a.sucursal===n).sort((p,q)=>p.fecha.localeCompare(q.fecha)).map(a=>({t:new Date(a.fecha).getTime(),v:(fRubro!=='Todos'?score(a.resultados).areaPct[fRubro]:score(a.resultados).pct)})).filter(p=>p.v!==null)})).filter(s=>s.pts.length);
+ const series=sucs.map((n)=>({n,pts:DB.filter(a=>a.sucursal===n).sort((p,q)=>p.fecha.localeCompare(q.fecha)).map(a=>({t:new Date(a.fecha).getTime(),v:(fRubro!=='Todos'?scoreAudit(a).areaPct[fRubro]:scoreAudit(a).pct)})).filter(p=>p.v!==null)})).filter(s=>s.pts.length);
  const all=series.flatMap(s=>s.pts);
  const legendEl=document.getElementById('lineLegend');
  if(!all.length){x.fillStyle=css('--ink-3');x.font='13px system-ui';x.textAlign='center';x.fillText('Sin datos para graficar.',w/2,h/2);legendEl.innerHTML='';return;}
@@ -1030,10 +1059,10 @@ function drawDonut(vals){
 /* ============ REPORTE ============ */
 function openReportForSuc(suc){const a=latestBySuc()[suc];if(a)openReport(a.id);}
 function openReport(auditId){
- const a=DB.find(x=>x.id===auditId); if(!a)return; const s=score(a.resultados);
+ const a=DB.find(x=>x.id===auditId); if(!a)return; const s=scoreAudit(a);
  const LOGO=(document.querySelector('header .mark')||{}).src||'';
  const findings=s.findings.slice().sort((p,q)=>(q.peso-p.peso));
- const notas=Object.keys(a.resultados).filter(id=>a.resultados[id].estado==='cumple'&&a.resultados[id].coment&&ITEM[id]).map(id=>({...ITEM[id],coment:a.resultados[id].coment}));
+ const eff=effective(a); const notas=Object.keys(eff.res).filter(id=>{const r=eff.res[id];return r.estado==='cumple'&&(r.coment||(r.fotos&&r.fotos.length))&&ITEM[id];}).map(id=>({...ITEM[id],coment:eff.res[id].coment||'',fotos:eff.res[id].fotos||[]}));
  const cls=sem(s.pct);
  const areasBad=ROMS.map(r=>({r,v:s.areaPct[r]})).filter(x=>x.v!==null&&x.v<META).sort((a,b)=>a.v-b.v);
  const body=`
@@ -1041,7 +1070,7 @@ function openReport(auditId){
     <div style="display:flex;align-items:center;gap:12px">${LOGO?`<img src="${LOGO}" alt="Mora Mora" style="width:46px;height:46px;border-radius:50%;flex:none">`:''}
       <div><div class="t1" style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);font-weight:700">Mora Mora · Higiene Sanitaria</div>
       <div class="rt">Reporte de auditoría — ${a.sucursal}</div></div></div>
-    <div class="rmeta">Fecha: <b>${fmtLong(a.fecha)}</b><br>Evaluador: <b>${a.evaluador}</b><br>Encargado: <b>${a.encargado}</b></div>
+    <div class="rmeta">Fecha: <b>${fmtLong(a.fecha)}</b><br>Evaluador: <b>${a.evaluador}</b><br>Encargado: <b>${a.encargado}</b>${a.tipo==='sucursal'?'<br>Tipo: <b>Auditoría de sucursal</b>':''}</div>
   </div>
   <div class="rep-score">
     <div class="box"><div class="l">Cumplimiento</div><div class="v c-${cls}">${s.pct}%</div></div>
@@ -1049,6 +1078,7 @@ function openReport(auditId){
     <div class="box"><div class="l">Críticos abiertos</div><div class="v c-crit">${s.critOpen}</div></div>
     <div class="box"><div class="l">Rubros bajo meta</div><div class="v">${areasBad.length}</div></div>
   </div>
+  ${a.tipo==='sucursal'?`<div style="font-size:12.5px;color:var(--ink-2);margin:0 0 10px">Auditoría de sucursal: se evaluaron los puntos que dependen de la sucursal. ${s.base?'Los puntos de corporativo corresponden a la auditoría general del <b>'+fmtLong(s.base.fecha)+'</b>.':'Aún no hay una auditoría general previa, así que los puntos de corporativo no entran en el porcentaje.'}</div>`:''}
   ${areasBad.length?`<div class="rep-sec-h">Rubros por debajo de la meta (${META}%)</div>
     <div style="font-size:13px;color:var(--ink-2)">${areasBad.map(x=>`${x.r}. ${AREA_NAME[x.r]} — <b class="c-${sem(x.v)}">${x.v}%</b>`).join(' · ')}</div>`:''}
   <div class="rep-sec-h">Hallazgos y plan de acción (${findings.length})</div>
@@ -1058,7 +1088,7 @@ function openReport(auditId){
      <div class="rf-grid"><span>Estatus: <b>${({abierto:'Abierto',en_proceso:'En proceso',cerrado:'Cerrado'})[f.estatus]}</b></span></div>
      ${f.fotos&&f.fotos.length?`<div class="thumbs" style="margin-top:8px">${f.fotos.map(fotoTagHTML).join('')}</div>`:''}
    </div>`).join(''):'<div class="empty">Sin hallazgos: cumplimiento total. 🎉</div>'}
-  ${notas.length?`<div class="rep-sec-h">Observaciones (puntos que cumplen con nota)</div>${notas.map(n=>`<div style="font-size:13px;color:var(--ink-2);padding:4px 0">• <b>${n.rom}.</b> ${n.texto} — “${n.coment}”</div>`).join('')}`:''}
+  ${notas.length?`<div class="rep-sec-h">Evidencias de cumplimiento (puntos que cumplen con nota o foto)</div>${notas.map(n=>`<div style="font-size:13px;color:var(--ink-2);padding:4px 0">• <b>${n.rom}.</b> ${n.texto}${n.coment?' — “'+n.coment+'”':''}${n.fotos.length?`<div class="thumbs" style="margin-top:6px">${n.fotos.map(fotoTagHTML).join('')}</div>`:''}</div>`).join('')}`:''}
   <div style="margin-top:14px;font-size:11px;color:var(--ink-3)">Generado desde el tablero de Auditoría de Higiene Sanitaria · Mora Mora.</div>`;
  const modal=document.getElementById('modal');
  modal.innerHTML=`<div class="mhd"><h2>Reporte · ${a.sucursal}</h2>
@@ -1077,13 +1107,13 @@ function openReport(auditId){
  hydrateCloudPhotos(modal);
 }
 function buildReportHTML(a,resolvedFotos){
- const s=score(a.resultados);
+ const s=scoreAudit(a);
  const LOGO=(document.querySelector('header .mark')||{}).src||'';
  const esc=v=>String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
  const col=v=>v>=META?'#1F7A4D':v>=70?'#B26B00':'#B4302E';
  const rubros=ROMS.map(r=>({r,v:s.areaPct[r]})).filter(x=>x.v!==null).sort((x,y)=>x.v-y.v);
  const findings=s.findings.slice().sort((p,q)=>(q.peso-p.peso));
- const notas=Object.keys(a.resultados).filter(id=>a.resultados[id].estado==='cumple'&&a.resultados[id].coment&&ITEM[id]).map(id=>({...ITEM[id],coment:a.resultados[id].coment}));
+ const eff=effective(a); const notas=Object.keys(eff.res).filter(id=>{const r=eff.res[id];return r.estado==='cumple'&&(r.coment||(r.fotos&&r.fotos.length))&&ITEM[id];}).map(id=>({...ITEM[id],coment:eff.res[id].coment||'',fotos:eff.res[id].fotos||[]}));
  const areasBad=rubros.filter(x=>x.v<META);
  const EL={abierto:'Abierto',en_proceso:'En proceso',cerrado:'Cerrado'};
  const STYLE=`*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#15202F;background:#F5F8FC;line-height:1.5}
@@ -1117,12 +1147,13 @@ function buildReportHTML(a,resolvedFotos){
  <div class="wrap">
   <div class="head">${LOGO?`<img class="logo" src="${LOGO}" alt="Mora Mora">`:''}
    <div><div class="t1">Mora Mora · Higiene Sanitaria</div><h1>Reporte de auditoría — ${esc(a.sucursal)}</h1></div>
-   <div class="meta">Fecha: <b>${esc(fmtLong(a.fecha))}</b><br>Evaluador: <b>${esc(a.evaluador)}</b><br>Encargado: <b>${esc(a.encargado)}</b></div></div>
+   <div class="meta">Fecha: <b>${esc(fmtLong(a.fecha))}</b><br>Evaluador: <b>${esc(a.evaluador)}</b><br>Encargado: <b>${esc(a.encargado)}</b>${a.tipo==='sucursal'?'<br>Tipo: <b>Auditoría de sucursal</b>':''}</div></div>
   <div class="kpis">
    <div class="kpi" style="border-top-color:${col(s.pct)}"><div class="l">Cumplimiento</div><div class="v" style="color:${col(s.pct)}">${s.pct}%</div></div>
    <div class="kpi"><div class="l">Hallazgos</div><div class="v">${findings.length}</div></div>
    <div class="kpi" style="border-top-color:#B4302E"><div class="l">Críticos abiertos</div><div class="v" style="color:#B4302E">${s.critOpen}</div></div>
    <div class="kpi" style="border-top-color:#B26B00"><div class="l">Rubros bajo meta</div><div class="v">${areasBad.length}</div></div></div>
+  ${a.tipo==='sucursal'?`<p class="nota" style="margin:0 0 12px">Auditoría de sucursal: se evaluaron los puntos que dependen de la sucursal. ${s.base?'Los puntos de corporativo corresponden a la auditoría general del <b>'+esc(fmtLong(s.base.fecha))+'</b>.':'Aún no hay una auditoría general previa, así que los puntos de corporativo no entran en el porcentaje.'}</p>`:''}
   <h2>Calificación por rubro (meta ${META}%)</h2>
   ${rubros.map(x=>`<div class="rb"><span>${x.r}. ${esc(AREA_NAME[x.r])}</span><div class="bar"><i style="width:${x.v}%;background:${col(x.v)}"></i></div><b style="color:${col(x.v)}">${x.v}%</b></div>`).join('')}
   <h2>Hallazgos y plan de acción (${findings.length})</h2>
@@ -1131,16 +1162,17 @@ function buildReportHTML(a,resolvedFotos){
     <div class="fs">${f.rom}. ${esc(f.area)} · No cumple${f.coment?' — “'+esc(f.coment)+'”':''}</div>
     <span class="st">${EL[f.estatus]||''}</span>
     ${(()=>{const fotos=resolvedFotos&&resolvedFotos[f.id]?resolvedFotos[f.id]:(f.fotos||[]).filter(v=>!isCloudPhotoRef(v));return fotos.length?`<div class="ev">${fotos.map(fotoTagHTML).join('')}</div>`:'';})()}</div>`).join(''):'<p style="color:#7C8CA1">Sin hallazgos: cumplimiento total. 🎉</p>'}
-  ${notas.length?`<h2>Observaciones</h2>${notas.map(n=>`<div class="nota">• <b>${n.rom}.</b> ${esc(n.texto)} — “${esc(n.coment)}”</div>`).join('')}`:''}
+  ${notas.length?`<h2>Evidencias de cumplimiento</h2>${notas.map(n=>{const fotos=resolvedFotos&&resolvedFotos[n.id]?resolvedFotos[n.id]:(n.fotos||[]).filter(v=>!isCloudPhotoRef(v));return `<div class="nota">• <b>${n.rom}.</b> ${esc(n.texto)}${n.coment?' — “'+esc(n.coment)+'”':''}${fotos.length?`<div class="ev">${fotos.map(fotoTagHTML).join('')}</div>`:''}</div>`;}).join('')}`:''}
   <div class="foot">Generado desde el tablero de Auditoría de Higiene Sanitaria · Mora Mora.</div></div>
  <div id="lb"><img alt="Evidencia"></div>
  <script>var lb=document.getElementById('lb');document.querySelectorAll('.ev img').forEach(function(im){im.addEventListener('click',function(e){e.preventDefault();lb.querySelector('img').src=im.src;lb.style.display='flex';});});lb.addEventListener('click',function(){lb.style.display='none';});<\/script>
  </body></html>`;
 }
 async function downloadReport(a){
- const needsFetch=Object.values(a.resultados).some(r=>(r.fotos||[]).some(isCloudPhotoRef));
+ const effRes=effective(a).res;
+ const needsFetch=Object.values(effRes).some(r=>(r.fotos||[]).some(isCloudPhotoRef));
  if(needsFetch)toast('Preparando fotos…');
- const resolvedFotos=await resolveFotosForOffline(a.resultados);
+ const resolvedFotos=await resolveFotosForOffline(effRes);
  const html=buildReportHTML(a,resolvedFotos);
  const name='Reporte-'+a.sucursal.replace(/\s+/g,'-')+'-'+a.fecha+'.html';
  const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
@@ -1165,20 +1197,42 @@ document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==
 
 /* ============ NUEVA AUDITORIA ============ */
 let draft={};
-function initNueva(){
- const sel=document.getElementById('f-suc'); sel.innerHTML=SUC_ACT.map(s=>`<option>${s}</option>`).join('');
- document.getElementById('f-fecha').value=todayISO();
- document.getElementById('f-eval').value=''; document.getElementById('f-enc').value='';
- draft={};
+function curTipo(){const el=document.getElementById('f-tipo');return el&&el.value==='sucursal'?'sucursal':'general';}
+function inScope(id){return curTipo()==='general'||(ITEM[id]&&ITEM[id].resp==='sucursal');}
+function scopedMaster(){return MASTER.map(a=>({...a,items:a.items.filter(it=>inScope(it[0]))})).filter(a=>a.items.length);}
+function updateTipoHint(){
+ const h=document.getElementById('tipoHint'); if(!h)return;
+ if(curTipo()==='general'){h.textContent='Auditoría general: se evalúan los 84 puntos.';return;}
+ const suc=document.getElementById('f-suc').value;
+ const nS=Object.values(ITEM).filter(i=>i.resp==='sucursal').length, nC=Object.keys(ITEM).length-nS;
+ const base=baselineGeneral({id:'',sucursal:suc,fecha:'9999-12-31'});
+ h.textContent=`Auditoría de sucursal: se evalúan ${nS} puntos. Los ${nC} de corporativo se toman de la última auditoría general de ${suc}`+(base?` (${fmtLong(base.fecha)}).`:'; esa sucursal aún no tiene una, así que no entrarán al porcentaje.');
+}
+let lastTipo='general';
+function renderAreas(){
  const c=document.getElementById('areas');
- c.innerHTML=MASTER.map((a,i)=>`<details class="area"${i===0?' open':''}>
+ c.innerHTML=scopedMaster().map((a,i)=>`<details class="area"${i===0?' open':''}>
    <summary><span class="rom">${a.rom}</span><span class="atitle">${a.area}</span><span class="acount">${a.items.length} puntos</span><span class="caret">▸</span></summary>
    ${a.items.map(it=>itemHTML(it)).join('')}</details>`).join('');
  c.querySelectorAll('.estbtns').forEach(g=>g.addEventListener('click',onEst));
  c.querySelectorAll('.fu-txt').forEach(inp=>inp.addEventListener('input',e=>{const id=e.target.dataset.id,k=e.target.dataset.k;if(!draft[id])draft[id]={estado:'cumple'};draft[id][k]=e.target.value;}));
  c.querySelectorAll('.fu-photo').forEach(inp=>inp.addEventListener('change',onPhoto));
+ updateTipoHint();
  recalc();
 }
+function initNueva(){
+ const sel=document.getElementById('f-suc'); sel.innerHTML=SUC_ACT.map(s=>`<option>${s}</option>`).join('');
+ document.getElementById('f-fecha').value=todayISO();
+ document.getElementById('f-eval').value=''; document.getElementById('f-enc').value='';
+ document.getElementById('f-tipo').value='general'; lastTipo='general';
+ draft={};
+ renderAreas();
+}
+document.getElementById('f-tipo').addEventListener('change',()=>{
+ if(Object.keys(draft).length&&!confirm('Cambiar el tipo de auditoría reinicia lo que ya capturaste en los puntos. ¿Continuar?')){document.getElementById('f-tipo').value=lastTipo;return;}
+ lastTipo=curTipo(); draft={}; renderAreas();
+});
+document.getElementById('f-suc').addEventListener('change',updateTipoHint);
 function itemHTML(it){
  const [id,txt,ori,peso]=it;
  return `<div class="item" data-id="${id}">
@@ -1216,10 +1270,10 @@ function renderThumbs(id){const el=document.querySelector(`[data-thumbs="${id}"]
  el.querySelectorAll('img').forEach(img=>img.addEventListener('click',()=>lightbox(img.src)));
  el.querySelectorAll('.thumb-del').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const i=+b.dataset.i;if(draft[id]&&draft[id].fotos){draft[id].fotos.splice(i,1);renderThumbs(id);}}));}
 function recalc(){
- const s=score(draft);
+ const s=score(draft,inScope);
  document.getElementById('liveBig').innerHTML=`${Math.round(s.pct)}<small style="font-size:20px">%</small>`;
  drawRing(s.pct);
- document.getElementById('liveAreas').innerHTML=MASTER.map(a=>{const p=s.areaPct[a.rom];const cls=p===null?'na':sem(p);return `<div class="ab"><div class="abtop"><span>${a.rom}. ${a.area}</span><b class="${cls==='na'?'':'c-'+cls}">${p===null?'N.A.':p+'%'}</b></div><div class="track"><div class="fill" style="width:${p===null?0:p}%;background:${p===null?'var(--na)':'var(--'+cls+')'}"></div></div></div>`;}).join('');
+ document.getElementById('liveAreas').innerHTML=scopedMaster().map(a=>{const p=s.areaPct[a.rom];const cls=p===null?'na':sem(p);return `<div class="ab"><div class="abtop"><span>${a.rom}. ${a.area}</span><b class="${cls==='na'?'':'c-'+cls}">${p===null?'N.A.':p+'%'}</b></div><div class="track"><div class="fill" style="width:${p===null?0:p}%;background:${p===null?'var(--na)':'var(--'+cls+')'}"></div></div></div>`;}).join('');
  const w=document.getElementById('critWarn'); if(s.critOpen>0){w.classList.add('show');w.textContent=`⚠ ${s.critOpen} punto(s) crítico(s) sin cumplir`;}else w.classList.remove('show');
 }
 function drawRing(pct){const cv=document.getElementById('ring'),x=cv.getContext('2d'),cx=60,cy=60,r=48;x.clearRect(0,0,120,120);const col=css('--'+sem(pct));x.lineWidth=11;x.lineCap='round';x.beginPath();x.arc(cx,cy,r,0,Math.PI*2);x.strokeStyle=css('--surface-3');x.stroke();x.beginPath();x.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+Math.PI*2*(pct/100));x.strokeStyle=col;x.stroke();}
@@ -1227,10 +1281,10 @@ document.getElementById('saveBtn').addEventListener('click',()=>{
  const suc=document.getElementById('f-suc').value, fecha=document.getElementById('f-fecha').value;
  const evaluador=document.getElementById('f-eval').value.trim()||'—', encargado=document.getElementById('f-enc').value.trim()||'—';
  if(!fecha){toast('Indica la fecha');return;}
- const resultados={}; for(const id in draft){const d=draft[id]; if(!d.estado)continue;
+ const resultados={}; for(const id in draft){const d=draft[id]; if(!d.estado||!inScope(id))continue;
    if(d.estado!=='cumple')resultados[id]={estado:d.estado,coment:d.coment||'',estatus:d.estatus||'abierto',fotos:d.fotos||[]};
-   else if(d.coment)resultados[id]={estado:'cumple',coment:d.coment};}
- const a={id:'a_'+suc.replace(/\s/g,'')+'_'+fecha+'_'+Date.now(),sucursal:suc,fecha,evaluador,encargado,resultados};
+   else if(d.coment||(d.fotos&&d.fotos.length))resultados[id]={estado:'cumple',coment:d.coment||'',fotos:d.fotos||[]};}
+ const a={id:'a_'+suc.replace(/\s/g,'')+'_'+fecha+'_'+Date.now(),sucursal:suc,fecha,tipo:curTipo(),evaluador,encargado,resultados};
  DB.push(a);save(DB);cloudSave(a);
  postSave(a.id,suc);
 });
@@ -1277,7 +1331,7 @@ function importData(file){
 /* ============ MAESTRO ============ */
 function renderMaestro(){
  document.getElementById('maestro').innerHTML=MASTER.map(a=>`<div class="marea"><h3><span class="rom">${a.rom}</span> ${a.area}</h3>
-   ${a.items.map(it=>`<div class="mrow"><span class="mid">${it[0]}</span><span class="mtxt">${it[1]}</span><span class="mbadges"><span class="chip ori-${it[2]}">${ORI[it[2]]}</span>${it[3]===2?'<span class="chip crit">×2</span>':''}</span></div>`).join('')}</div>`).join('');
+   ${a.items.map(it=>`<div class="mrow"><span class="mid">${it[0]}</span><span class="mtxt">${it[1]}</span><span class="mbadges"><span class="chip ori-${it[2]}">${ORI[it[2]]}</span>${it[3]===2?'<span class="chip crit">×2</span>':''}${ITEM[it[0]].resp==='corporativo'?'<span class="chip ori-norma">Corporativo</span>':''}</span></div>`).join('')}</div>`).join('');
 }
 
 /* ============ NAV / MISC ============ */
@@ -1299,7 +1353,7 @@ document.getElementById('exportBtn').addEventListener('click',exportData);
 document.getElementById('importFile').addEventListener('change',e=>{if(e.target.files[0])importData(e.target.files[0]);e.target.value='';});
 function buildExecutiveReportHTML(){
  const latest=latestBySuc();
- const scored=SUC_ACT.filter(n=>latest[n]).map(n=>({a:latest[n],s:score(latest[n].resultados)}));
+ const scored=SUC_ACT.filter(n=>latest[n]).map(n=>({a:latest[n],s:scoreAudit(latest[n])}));
  const valid=scored.filter(x=>x.s.pct!==null);
  const dates=DB.map(a=>a.fecha).sort();
  const globalPct=valid.length?Math.round(valid.reduce((t,x)=>t+x.s.pct,0)/valid.length*10)/10:0;
