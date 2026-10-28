@@ -647,6 +647,10 @@ const SUGERIDO={
  '74':'Verificar vigencia y visibilidad de extintores, salidas de emergencia y rutas de evacuación; recargar/reponer señalización si es necesario.',
 };
 const ROMS=MASTER.map(a=>a.rom);
+/* Puntos que NO aplican por sucursal (no se capturan ni cuentan en el %). CEDIS: tomado de los N.A. de su auditoría del 07-sep-2026 */
+const NO_APLICA={'CEDIS':new Set(['3','4','5','7','9','10','14','15','25','27','28','29','30','31','32','33','34','35','37','40','41','42','43','44','45','46','48','49','50','51','52','53','54','61','62','65','70','71','75','76','77','78','79','80','81','82','83','84','85','86','87','88'])};
+const aplica=(suc,id)=>!(NO_APLICA[suc]&&NO_APLICA[suc].has(id));
+const nAplica=suc=>Object.keys(ITEM).filter(id=>aplica(suc,id)).length;
 // Sucursales reales (CDI inactiva temporalmente)
 const SUCURSALES=[
  {n:'Condesa',act:true},{n:'Colima',act:true},{n:'Santa Fe',act:true},{n:'Liverpool',act:true},
@@ -780,11 +784,12 @@ function deleteAudit(id){
 }
 
 /* ============ SCORING ============ */
-function score(res,scope){
+function score(res,scope,suc){
  let num=0,den=0,byArea={},findings=[],critOpen=0;
  ROMS.forEach(r=>byArea[r]={num:0,den:0});
  for(const id in ITEM){
    if(scope&&!scope(id))continue;
+   if(suc&&!aplica(suc,id))continue;
    const it=ITEM[id]; const r=res[id]; const estado=r?r.estado:'cumple';
    const v=EST[estado].v; if(v===null)continue;
    num+=v*it.peso; den+=it.peso; byArea[it.rom].num+=v*it.peso; byArea[it.rom].den+=it.peso;
@@ -815,7 +820,7 @@ function effective(a){
  return {res,src,base};
 }
 function scoreAudit(a){
- const e=effective(a); const s=score(e.res);
+ const e=effective(a); const s=score(e.res,null,a.sucursal);
  if(e.src)s.findings.forEach(f=>{f.auditId=e.src[f.id]||a.id;});
  s.base=e.base; return s;
 }
@@ -941,7 +946,7 @@ function renderSucBars(latest,pctOf,rubActive){
 }
 
 function renderRecurrentes(){
- const cnt={}; DB.forEach(a=>{if(fSuc!=='Todas'&&a.sucursal!==fSuc)return;const s=score(a.resultados);s.findings.forEach(f=>{if(fRubro!=='Todos'&&f.rom!==fRubro)return;cnt[f.id]=(cnt[f.id]||0)+1;});});
+ const cnt={}; DB.forEach(a=>{if(fSuc!=='Todas'&&a.sucursal!==fSuc)return;const s=score(a.resultados,null,a.sucursal);s.findings.forEach(f=>{if(fRubro!=='Todos'&&f.rom!==fRubro)return;cnt[f.id]=(cnt[f.id]||0)+1;});});
  const rec=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,8);
  document.getElementById('recList').innerHTML=rec.length?rec.map(([id,c])=>{const it=ITEM[id];return `<div class="rec"><span class="dot s-${it.peso===2?'crit':'warn'}"></span><span class="txt"><b>${it.rom}.</b> ${it.texto}</span><span class="cnt">${c}×</span></div>`;}).join(''):'<div class="empty">Sin hallazgos con los filtros actuales.</div>';
 }
@@ -1198,17 +1203,20 @@ document.getElementById('overlay').addEventListener('click',e=>{if(e.target.id==
 /* ============ NUEVA AUDITORIA ============ */
 let draft={};
 function curTipo(){const el=document.getElementById('f-tipo');return el&&el.value==='sucursal'?'sucursal':'general';}
-function inScope(id){return curTipo()==='general'||(ITEM[id]&&ITEM[id].resp==='sucursal');}
+function inScope(id){const suc=document.getElementById('f-suc').value;return aplica(suc,id)&&(curTipo()==='general'||(ITEM[id]&&ITEM[id].resp==='sucursal'));}
 function scopedMaster(){return MASTER.map(a=>({...a,items:a.items.filter(it=>inScope(it[0]))})).filter(a=>a.items.length);}
 function updateTipoHint(){
  const h=document.getElementById('tipoHint'); if(!h)return;
- if(curTipo()==='general'){h.textContent='Auditoría general: se evalúan los 84 puntos.';return;}
- const suc=document.getElementById('f-suc').value;
- const nS=Object.values(ITEM).filter(i=>i.resp==='sucursal').length, nC=Object.keys(ITEM).length-nS;
+ const suc=document.getElementById('f-suc').value, nTot=nAplica(suc);
+ const sel=document.getElementById('f-tipo'); if(sel&&sel.options[0])sel.options[0].text=`General (los ${nTot} puntos)`;
+ const extra=NO_APLICA[suc]?` (${Object.keys(ITEM).length-nTot} puntos no aplican a ${suc} y se ocultan)`:'';
+ if(curTipo()==='general'){h.textContent=`Auditoría general: se evalúan los ${nTot} puntos${extra}.`;return;}
+ const ids=Object.keys(ITEM).filter(id=>aplica(suc,id));
+ const nS=ids.filter(id=>ITEM[id].resp==='sucursal').length, nC=ids.length-nS;
  const base=baselineGeneral({id:'',sucursal:suc,fecha:'9999-12-31'});
  h.textContent=`Auditoría de sucursal: se evalúan ${nS} puntos. Los ${nC} de corporativo se toman de la última auditoría general de ${suc}`+(base?` (${fmtLong(base.fecha)}).`:'; esa sucursal aún no tiene una, así que no entrarán al porcentaje.');
 }
-let lastTipo='general';
+let lastTipo='general', lastSuc='';
 function renderAreas(){
  const c=document.getElementById('areas');
  c.innerHTML=scopedMaster().map((a,i)=>`<details class="area"${i===0?' open':''}>
@@ -1224,7 +1232,7 @@ function initNueva(){
  const sel=document.getElementById('f-suc'); sel.innerHTML=SUC_ACT.map(s=>`<option>${s}</option>`).join('');
  document.getElementById('f-fecha').value=todayISO();
  document.getElementById('f-eval').value=''; document.getElementById('f-enc').value='';
- document.getElementById('f-tipo').value='general'; lastTipo='general';
+ document.getElementById('f-tipo').value='general'; lastTipo='general'; lastSuc=sel.value;
  draft={};
  renderAreas();
 }
@@ -1232,7 +1240,12 @@ document.getElementById('f-tipo').addEventListener('change',()=>{
  if(Object.keys(draft).length&&!confirm('Cambiar el tipo de auditoría reinicia lo que ya capturaste en los puntos. ¿Continuar?')){document.getElementById('f-tipo').value=lastTipo;return;}
  lastTipo=curTipo(); draft={}; renderAreas();
 });
-document.getElementById('f-suc').addEventListener('change',updateTipoHint);
+document.getElementById('f-suc').addEventListener('change',()=>{
+ const suc=document.getElementById('f-suc').value;
+ if(NO_APLICA[suc]===NO_APLICA[lastSuc]){lastSuc=suc;updateTipoHint();return;}
+ if(Object.keys(draft).length&&!confirm('Esta sucursal tiene una lista de puntos distinta; cambiarla reinicia lo que ya capturaste. ¿Continuar?')){document.getElementById('f-suc').value=lastSuc;return;}
+ lastSuc=suc; draft={}; renderAreas();
+});
 function itemHTML(it){
  const [id,txt,ori,peso]=it;
  return `<div class="item" data-id="${id}">
@@ -1270,7 +1283,7 @@ function renderThumbs(id){const el=document.querySelector(`[data-thumbs="${id}"]
  el.querySelectorAll('img').forEach(img=>img.addEventListener('click',()=>lightbox(img.src)));
  el.querySelectorAll('.thumb-del').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const i=+b.dataset.i;if(draft[id]&&draft[id].fotos){draft[id].fotos.splice(i,1);renderThumbs(id);}}));}
 function recalc(){
- const s=score(draft,inScope);
+ const s=score(draft,inScope,document.getElementById('f-suc').value);
  document.getElementById('liveBig').innerHTML=`${Math.round(s.pct)}<small style="font-size:20px">%</small>`;
  drawRing(s.pct);
  document.getElementById('liveAreas').innerHTML=scopedMaster().map(a=>{const p=s.areaPct[a.rom];const cls=p===null?'na':sem(p);return `<div class="ab"><div class="abtop"><span>${a.rom}. ${a.area}</span><b class="${cls==='na'?'':'c-'+cls}">${p===null?'N.A.':p+'%'}</b></div><div class="track"><div class="fill" style="width:${p===null?0:p}%;background:${p===null?'var(--na)':'var(--'+cls+')'}"></div></div></div>`;}).join('');
