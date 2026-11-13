@@ -130,6 +130,27 @@
   .card > .hd h2{font-size:16px} .card > .hd .note{font-size:12px;color:var(--ink-3);margin-left:auto}
   .card .bd{padding:14px 18px 18px}
   .grid2{display:grid;grid-template-columns:1.5fr 1fr;gap:18px;align-items:start}
+  .kpis.k4{grid-template-columns:repeat(4,1fr)}
+  .kpis-title{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin:-8px 0 8px}
+  @media (max-width:860px){.kpis.k4{grid-template-columns:repeat(2,1fr)}}
+  .heatwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table.heat{border-collapse:separate;border-spacing:3px;font-size:12px;min-width:100%}
+  table.heat th{font-size:11px;color:var(--ink-3);font-weight:700;padding:4px 2px;text-align:center;white-space:nowrap}
+  table.heat th.sn,table.heat td.sn{text-align:left;padding-right:8px;color:var(--ink);font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--surface)}
+  table.heat td.c{min-width:38px;height:30px;text-align:center;border-radius:6px;color:var(--paper);font-weight:700;font-variant-numeric:tabular-nums}
+  table.heat td.c.na{background:var(--surface-3);color:var(--ink-3);font-weight:500}
+  table.heat td.c.tot{outline:2px solid var(--line)}
+  .verd{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;margin-left:6px;vertical-align:1px;color:var(--paper)}
+  .verd.ok{background:var(--good)}.verd.riesgo{background:var(--warn)}.verd.reprob{background:var(--crit)}
+  .dt.late{color:var(--crit);font-weight:700}
+  .agechip{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:20px;background:var(--surface-3);color:var(--ink-2);margin-right:6px}
+  .agechip.late{background:var(--crit);color:var(--paper)}
+  .reinc{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:20px;background:var(--warn);color:var(--paper);margin-right:6px}
+  .agebar{display:flex;height:16px;border-radius:8px;overflow:hidden;background:var(--surface-3);margin:6px 0 8px}
+  .agebar i{display:block;height:100%}
+  .agelegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2)}
+  .agelegend b{font-variant-numeric:tabular-nums}
+  .agelegend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
   @media (max-width:820px){.grid2{grid-template-columns:1fr}}
 
   canvas{display:block;max-width:100%}
@@ -385,6 +406,8 @@
     </div>
 
     <div class="kpis" id="kpis"></div>
+    <div class="kpis-title">Riesgo y seguimiento</div>
+    <div class="kpis k4" id="kpisRiesgo"></div>
 
     <div class="subtabs" role="tablist">
       <button role="tab" aria-selected="true" data-panel="global">Resumen global</button>
@@ -408,6 +431,10 @@
           <div class="hd"><h2>Distribución</h2><span class="note">última visita</span></div>
           <div class="bd"><div class="donutrow"><div class="chartwrap" style="width:170px;flex:none"><canvas id="donut" width="170" height="170"></canvas></div><div class="donutlegend" id="donutLegend"></div></div></div>
         </div>
+      </div>
+      <div class="card">
+        <div class="hd"><h2>Mapa de calor · sucursal × rubro</h2><span class="note">última visita · verde ≥85% · ámbar 70–84% · rojo &lt;70%</span></div>
+        <div class="bd"><div class="heatwrap" id="heatMap"></div></div>
       </div>
       <div class="card">
         <div class="hd"><h2>Hallazgos recurrentes</h2><span class="note">todas las visitas</span></div>
@@ -435,7 +462,7 @@
             <button data-f="cerrado" aria-pressed="false">Cerrados</button>
           </div>
         </div>
-        <div class="bd" id="planList"></div>
+        <div class="bd"><div id="ageBox"></div><div id="planList"></div></div>
       </div>
     </div>
 
@@ -842,6 +869,12 @@ function scoreAudit(a){
 }
 function sem(p){return p>=85?'good':p>=70?'warn':'crit';}
 function DBV(){return DB.filter(a=>grpOf(a.tipo)===fTipo);}
+/* Riesgo y seguimiento (referencias: Ecolab EcoSure, SafetyCulture, Xenia, Steritech) */
+const VISITA_MAX=30, CRIT_HORAS=72;
+function diasDesde(f){if(!f)return null;return Math.max(0,Math.floor((new Date(todayISO()+'T00:00:00')-new Date(f+'T00:00:00'))/86400000));}
+function veredicto(s){if(s.pct>=META&&s.critOpen===0)return {k:'ok',lab:'Aprobada'};if(s.pct<70)return {k:'reprob',lab:'Reprobada'};return {k:'riesgo',lab:'En riesgo'};}
+function reincSet(a){const pv=prevOf(a);if(!pv)return new Set();return new Set(scoreAudit(pv).findings.map(f=>f.id));}
+function fechaDe(aid,fallback){const x=DB.find(a=>a.id===aid);return x?x.fecha:fallback;}
 function latestBySuc(){const m={};DBV().forEach(a=>{if(!m[a.sucursal]||a.fecha>m[a.sucursal].fecha)m[a.sucursal]=a;});return m;}
 function prevOf(a){return DB.filter(x=>x.sucursal===a.sucursal&&grpOf(x.tipo)===grpOf(a.tipo)&&x.fecha<a.fecha).sort((p,q)=>q.fecha.localeCompare(p.fecha))[0];}
 const fmt=d=>{if(!d)return'—';const p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0].slice(2);};
@@ -897,6 +930,17 @@ function renderDash(){
   <div class="kpi warn"><div class="lab">Rubro crítico global</div><div class="val txt">${worstRub?worstRub[0]+'. '+AREA_NAME[worstRub[0]]:'—'}</div><div class="sub">promedio ${worstRub?Math.round(worstRub[1])+'%':'—'} (el más bajo)</div></div>
   <div class="kpi crit"><div class="lab">Críticos abiertos</div><div class="val">${critOpen}</div><div class="sub">${openFind.length} hallazgos abiertos en total</div></div>`;
 
+ // ---- KPIs de riesgo ----
+ let reinc=0, critVenc=0;
+ scored.forEach(x=>{const rs=reincSet(x.a);x.s.findings.forEach(f=>{if(f.estatus==='cerrado')return;if(rs.has(f.id))reinc++;if(f.peso===2&&diasDesde(fechaDe(f.auditId||x.a.id,x.a.fecha))*24>CRIT_HORAS)critVenc++;});});
+ const aprob=scored.filter(x=>veredicto(x.s).k==='ok').length;
+ const vencidas=SUC_ACT.filter(n=>!latest[n]||diasDesde(latest[n].fecha)>VISITA_MAX);
+ document.getElementById('kpisRiesgo').innerHTML=`
+  <div class="kpi ${aprob===scored.length&&scored.length?'good':'warn'}"><div class="lab">Sucursales aprobadas</div><div class="val">${aprob}<small>/${scored.length}</small></div><div class="sub">≥${META}% y sin críticos abiertos</div></div>
+  <div class="kpi ${reinc?'warn':'good'}"><div class="lab">Reincidencias</div><div class="val">${reinc}</div><div class="sub">fallaron también en la visita anterior</div></div>
+  <div class="kpi ${critVenc?'crit':'good'}"><div class="lab">Críticos vencidos</div><div class="val">${critVenc}</div><div class="sub">abiertos hace más de ${CRIT_HORAS} h</div></div>
+  <div class="kpi ${vencidas.length?'crit':'good'}"><div class="lab">Visitas vencidas</div><div class="val">${vencidas.length}<small>/${SUC_ACT.length}</small></div><div class="sub" title="${vencidas.join(', ')}">${vencidas.length?'sin visita en +'+VISITA_MAX+' días: '+vencidas.slice(0,3).join(', ')+(vencidas.length>3?'…':''):'todas visitadas en '+VISITA_MAX+' días'}</div></div>`;
+ renderHeat(scored);
  // ---- LINE CHART (desarrollo) ----
  drawLine(scored);
  // ---- SUCURSAL BARS ----
@@ -956,13 +1000,34 @@ function renderSucBars(latest,pctOf,rubActive){
    if(p===null)return `<div class="suc"><div class="name">${s.n}<span class="dt">${fmt(a.fecha)}</span></div><div class="track"><div class="fill" style="width:0"></div></div><div class="pct">N.A.</div><div class="trend"></div></div>`;
    const cls=sem(p); const pv=prevOf(a); let tr='<span class="flat">–</span>';
    if(pv){const ps=scoreAudit(pv);const pp=rubActive?ps.areaPct[fRubro]:ps.pct;if(pp!==null)tr=p>pp+0.5?'<span class="up">▲</span>':p<pp-0.5?'<span class="down">▼</span>':'<span class="flat">=</span>';}
-   return `<div class="suc"><div class="name">${s.n}<span class="dt">${fmt(a.fecha)}</span></div>
+   const vd=veredicto(sc), dd=diasDesde(a.fecha);
+   return `<div class="suc"><div class="name">${s.n}${rubActive?'':`<span class="verd ${vd.k}">${vd.lab}</span>`}<span class="dt${dd>VISITA_MAX?' late':''}">${fmt(a.fecha)} · hace ${dd} d</span></div>
      <div class="track"><div class="meta-mark" style="left:${META}%"></div><div class="fill bg-${cls}" style="width:${p}%"></div></div>
      <div class="pct c-${cls}">${p}%</div><div class="trend">${tr}</div></div>`;
  }).join('');
  document.getElementById('sucList').innerHTML=rows;
 }
 
+function renderHeat(scored){
+ const el=document.getElementById('heatMap'); if(!el)return;
+ const areas=masterOf(fTipo); let rows=scored; if(fSuc!=='Todas')rows=rows.filter(x=>x.a.sucursal===fSuc);
+ if(!rows.length){el.innerHTML='<div class="empty">Sin auditorías con los filtros actuales.</div>';return;}
+ rows=rows.slice().sort((p,q)=>p.s.pct-q.s.pct);
+ const cell=v=>v===null||v===undefined?'<td class="c na">–</td>':`<td class="c bg-${sem(v)}">${Math.round(v)}</td>`;
+ el.innerHTML=`<table class="heat"><thead><tr><th class="sn">Sucursal</th>${areas.map(a=>`<th title="${a.area}"${fRubro===a.rom?' style="color:var(--accent)"':''}>${a.rom}</th>`).join('')}<th title="Cumplimiento total">Total</th></tr></thead><tbody>
+  ${rows.map(x=>`<tr><td class="sn" title="${fmtLong(x.a.fecha)}">${x.a.sucursal}</td>${areas.map(a=>cell(x.s.areaPct[a.rom])).join('')}${cell(x.s.pct).replace('class="c ','class="c tot ')}</tr>`).join('')}
+ </tbody></table>`;
+}
+function renderAging(groups){
+ const el=document.getElementById('ageBox'); if(!el)return;
+ const b=[0,0,0]; let crit=0;
+ groups.forEach(g=>g.all.forEach(f=>{if(f.estatus==='cerrado')return;const d=f.dias||0;b[d<=7?0:d<=VISITA_MAX?1:2]++;if(f.peso===2&&d*24>CRIT_HORAS)crit++;}));
+ const tot=b[0]+b[1]+b[2]; if(!tot){el.innerHTML='';return;}
+ const col=['var(--good)','var(--warn)','var(--crit)'], lab=['0–7 días','8–30 días','más de 30 días'];
+ el.innerHTML=`<div style="font-size:13px;font-weight:700">Antigüedad de hallazgos abiertos <span style="font-weight:400;color:var(--ink-3)">(${tot} abiertos o en proceso${crit?` · <b style="color:var(--crit)">${crit} críticos con más de ${CRIT_HORAS} h</b>`:''})</span></div>
+  <div class="agebar">${b.map((n,i)=>n?`<i style="width:${n/tot*100}%;background:${col[i]}" title="${lab[i]}: ${n}"></i>`:'').join('')}</div>
+  <div class="agelegend" style="margin-bottom:14px">${b.map((n,i)=>`<span><span class="sw" style="background:${col[i]}"></span>${lab[i]}: <b>${n}</b></span>`).join('')}</div>`;
+}
 function renderRecurrentes(){
  const cnt={}; DBV().forEach(a=>{if(fSuc!=='Todas'&&a.sucursal!==fSuc)return;const s=score(a.resultados,null,a.sucursal,a.tipo);s.findings.forEach(f=>{if(fRubro!=='Todos'&&f.rom!==fRubro)return;cnt[f.id]=(cnt[f.id]||0)+1;});});
  const rec=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,8);
@@ -983,13 +1048,15 @@ function renderRubroBars(rubroAvg){
 /* ---- PLAN por sucursal ---- */
 function renderPlan(scored){
  let groups=scored.map(x=>{
-   let fs=x.s.findings.map(f=>({...f,auditId:f.auditId||x.a.id}));
+   const rs=reincSet(x.a);
+   let fs=x.s.findings.map(f=>{const aid=f.auditId||x.a.id;return {...f,auditId:aid,reinc:rs.has(f.id),dias:diasDesde(fechaDe(aid,x.a.fecha))};});
    if(fRubro!=='Todos')fs=fs.filter(f=>f.rom===fRubro);
    const shown=curFilter==='todos'?fs:fs.filter(f=>f.estatus===curFilter);
    return {suc:x.a.sucursal,fecha:x.a.fecha,pct:x.s.pct,all:fs,shown,auditId:x.a.id,evaluador:x.a.evaluador||'',tipo:x.a.tipo||'general',baseFecha:(x.s.base&&x.s.base.fecha)||null};
  });
  // si se filtra por estatus (abiertos/en proceso/cerrados), ocultar sucursales sin hallazgos que apliquen a ese filtro;
  // pero SIEMPRE mostrar la sucursal cuando el filtro es "Todos" (para que el botón de Borrar esté disponible aunque no tenga hallazgos)
+ renderAging(groups);
  if(curFilter!=='todos')groups=groups.filter(g=>g.shown.length>0);
  const el=document.getElementById('planList');
  if(!groups.length){el.innerHTML='<div class="empty">Sin tareas con este filtro. 🎉</div>';return;}
@@ -1023,7 +1090,7 @@ function fitemHTML(f){
  const thumbs=f.fotos&&f.fotos.length?`<div class="thumbs">${f.fotos.map(fotoTagHTML).join('')}</div>`:'';
  return `<div class="fitem">
    <div class="fmain">
-     <div class="ftext">${f.peso===2?'<span class="chip crit" style="margin-right:6px">Crítico</span>':''}${f.resp==='corporativo'?'<span class="chip ori-norma" style="margin-right:6px">Corporativo</span>':''}${f.texto}</div>
+     <div class="ftext">${f.estatus!=='cerrado'&&f.dias!=null?`<span class="agechip${(f.peso===2&&f.dias*24>CRIT_HORAS)||f.dias>VISITA_MAX?' late':''}" title="Días desde la auditoría">⏱ ${f.dias} d</span>`:''}${f.reinc?'<span class="reinc" title="Este punto también falló en la visita anterior">↻ Reincidente</span>':''}${f.peso===2?'<span class="chip crit" style="margin-right:6px">Crítico</span>':''}${f.resp==='corporativo'?'<span class="chip ori-norma" style="margin-right:6px">Corporativo</span>':''}${f.texto}</div>
      <div class="fsub">${f.rom}. ${f.area}${f.coment?' — “'+f.coment+'”':''}</div>${thumbs}</div>
    <div class="fmeta">
      <select class="est" data-e="${f.estatus}" data-aid="${f.auditId}" data-iid="${f.id}">
